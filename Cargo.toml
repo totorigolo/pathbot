@@ -1,0 +1,9 @@
+[package]
+name = "pathbot"
+version = "0.1.0"
+authors = ["Thomas Lacroix <toto.rigolo@free.fr>"]
+edition = "2018"
+
+[dependencies]
+stdweb = "0.4"
+
