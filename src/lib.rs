@@ -1,13 +1,19 @@
+#![feature(option_flattening)]
+
 use log::*;
-use failure::Error;
+use failure::{Error, bail, format_err};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::convert::TryInto;
 use yew::prelude::*;
 use yew::html;
 use yew::format::{Json, Nothing};
 use yew::services::{
     fetch::{FetchService, FetchTask, Request, Response},
 };
+
+mod components;
+use components::compass::Compass;
 
 pub struct Model {
     state: State,
@@ -17,7 +23,6 @@ pub struct Model {
     fetch_task: Option<FetchTask>,
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct State {
     rooms: HashMap<String, Room>,
     current_room_id: Option<String>,
@@ -34,7 +39,7 @@ pub struct State {
 ///
 #[derive(Serialize, Deserialize, Debug)]
 #[allow(non_snake_case)]
-pub struct Room {
+struct RawRoom {
     status: String,
     message: String,
     exits: Vec<String>,
@@ -44,8 +49,53 @@ pub struct Room {
     locationPath: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct Room {
+    status: String,
+    message: String,
+    exits: Vec<String>,
+    description: String,
+    maze_exit_hint: MazeExitHint,
+    location_path: String,
+}
+
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub struct MazeExitHint {
+    direction: CompassDirection,
+    distance: u32,
+}
+
+impl TryInto<Room> for RawRoom {
+    type Error = Error;
+    fn try_into(self) -> Result<Room, Error> {
+        use CompassDirection::*;
+        let direction = match self.mazeExitDirection.as_ref() {
+            "N" => N,
+            "S" => S,
+            "E" => E,
+            "W" => W,
+            "NW" => NW,
+            "NE" => NE,
+            "SW" => SW,
+            "SE" => SE,
+            _ => bail!("Unknown direction: {}", self.mazeExitDirection),
+        };
+        Ok(Room {
+            status: self.status,
+            message: self.message,
+            exits: self.exits,
+            description: self.description,
+            maze_exit_hint: MazeExitHint {
+                direction,
+                distance: self.mazeExitDistance,
+            },
+            location_path: self.locationPath,
+        })
+    }
+}
+
 // TODO: Use this in Room
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub enum MoveDirection {
     N,
     S,
@@ -53,7 +103,7 @@ pub enum MoveDirection {
     W,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct Move {
     direction: MoveDirection,
 }
@@ -61,10 +111,22 @@ pub struct Move {
 pub enum Msg {
     Init,
     FetchNextRoom(MoveDirection),
-    FetchReady(Result<Room, Error>),
-    FetchFailed(Result<Room, Error>),
+    ReceivedRoom(Room),
+    FetchFailed(Error),
     ButtonPressed,
     Nope,
+}
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq)]
+pub enum CompassDirection {
+    N,
+    S,
+    E,
+    W,
+    NW,
+    NE,
+    SW,
+    SE,
 }
 
 impl Component for Model {
@@ -110,20 +172,15 @@ impl Component for Model {
                     error!("Logic error: no current room.");
                 }
             }
-            Msg::FetchReady(response) => {
+            Msg::ReceivedRoom(room) => {
                 self.fetching = false;
-                match response {
-                    Ok(room) => {
-                        info!("Received new room: {:?}", room);
-                        self.state.current_room_id = Some(room.locationPath.clone());
-                        self.state.rooms.insert(room.locationPath.clone(), room);
-                    },
-                    Err(e) => error!("Receive room failed: {:?}", e),
-                }
+                info!("Received new room: {:?}", room);
+                self.state.current_room_id = Some(room.location_path.clone());
+                self.state.rooms.insert(room.location_path.clone(), room);
             }
             Msg::FetchFailed(response) => {
                 self.fetching = false;
-                error!("Failed: {:?}", response);
+                error!("Fetching failed: {:?}", response);
             }
             Msg::ButtonPressed => {
                 info!("Button pressed");
@@ -138,11 +195,14 @@ impl Component for Model {
 
 impl Renderable<Model> for Model {
     fn view(&self) -> Html<Self> {
+        let current_room = self.current_room();
+        let exit_hint = current_room.map(|r| r.maze_exit_hint.clone());
         html! {
             <div class="pathbot-wrapper",>
                 <section id="main",>
                     { self.view_room() }
                     { self.view_buttons() }
+                    <Compass: maze_exit_hint=exit_hint,/>
                 </section>
             </div>
         }
@@ -154,6 +214,13 @@ impl Model {
         self.fetching || self.state.current_room_id.is_none()
     }
 
+    fn current_room(&self) -> Option<&Room> {
+        self.state.current_room_id
+            .as_ref()
+            .map(|id| self.state.rooms.get(id))
+            .flatten()
+    }
+
     fn view_room(&self) -> Html<Model> {
         if let Some(room_id) = &self.state.current_room_id {
             if let Some(room) = self.state.rooms.get(room_id) {
@@ -162,8 +229,6 @@ impl Model {
                     <p id="message",>{ &room.message }</p>
                     <p id="exits",>{ format!("{:?}", room.exits) }</p>
                     <p id="description",>{ &room.description }</p>
-                    <p id="mazeExitDirection",>{ &room.mazeExitDirection }</p>
-                    <p id="mazeExitDistance",>{ room.mazeExitDistance }</p>
                 }
             } else {
                 html!{
@@ -204,12 +269,18 @@ impl Model {
         // Send the request
         let callback = self
             .link
-            .send_back(move |response: Response<Json<Result<Room, Error>>>| {
+            .send_back(move |response: Response<Json<Result<RawRoom, Error>>>| {
                 let (meta, Json(data)) = response.into_parts();
                 if meta.status.is_success() {
-                    Msg::FetchReady(data)
+                    match data.and_then(|raw| raw.try_into()) {
+                        Ok(room) => Msg::ReceivedRoom(room),
+                        Err(e) => Msg::FetchFailed(e),
+                    }
                 } else {
-                    Msg::FetchFailed(data)
+                    match data {
+                        Ok(received) => Msg::FetchFailed(format_err!("Received error: {:?}", received)),
+                        Err(e) => Msg::FetchFailed(e)
+                    }
                 }
             });
         let task = self.fetch_service.fetch(request, callback);
