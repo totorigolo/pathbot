@@ -1,14 +1,13 @@
-use yew::{html, Component, ComponentLink, Html, Renderable, ShouldRender};
 use log::*;
+use yew::{html, Component, ComponentLink, Html, Renderable, ShouldRender};
 
-use crate::{CompassDirection, MazeExitHint};
+use crate::MazeExitHint;
 
 pub struct Compass {
     maze_exit_hint: Option<MazeExitHint>,
 }
 
-pub enum Msg {
-}
+pub enum Msg {}
 
 #[derive(PartialEq, Clone)]
 pub struct Props {
@@ -49,29 +48,15 @@ impl Component for Compass {
 
 impl Renderable<Compass> for Compass {
     fn view(&self) -> Html<Self> {
-        use CompassDirection::*;
         if let Some(exit_hint) = self.maze_exit_hint {
-            let direction = match exit_hint.direction {
-                N => "North",
-                S => "South",
-                E => "East",
-                W => "West",
-                NW => "North-West",
-                NE => "North-East",
-                SW => "South-West",
-                SE => "South-East",
-            };
-            let angle = 180. * match exit_hint.direction {
-                E => 0.,
-                NE => 1./4.,
-                N => 1./2.,
-                NW => 3./4.,
-                W => 1.,
-                SW => 5./4.,
-                S => 3./2.,
-                SE => 7./4.,
-            };
-            let rotate_style = format!("transform: rotate({}deg); width:100px; height:100px;", angle);
+            let direction = exit_hint.direction.long_name();
+            let angle = exit_hint.direction.angle_deg(); // clockwise
+            let rotate_style = format!(
+                "transform: rotate({}deg); \
+                 width:100px; \
+                 height:100px;",
+                angle
+            );
             html! {
                 <div div="compass", style=rotate_style,>
                     <p>{ format!("Direction: {}", direction) }</p>
@@ -88,5 +73,3 @@ impl Renderable<Compass> for Compass {
         }
     }
 }
-
-
