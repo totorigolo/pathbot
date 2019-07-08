@@ -126,13 +126,13 @@ impl CompassDirection {
         use CompassDirection::*;
         match self {
             N => 0.,
-            NW => 45.,
-            W => 90.,
-            SW => 135.,
+            NE => 45.,
+            E => 90.,
+            SE => 135.,
             S => 180.,
-            SE => 225.,
-            E => 270.,
-            NE => 315.,
+            SW => 225.,
+            W => 270.,
+            NW => 315.,
         }
     }
 }
