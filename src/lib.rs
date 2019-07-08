@@ -128,12 +128,12 @@ impl Renderable<Model> for Model {
         let current_room = self.current_room();
         let exit_hint = current_room.map(|r| r.maze_exit_hint);
         html! {
-            <div class="pathbot-wrapper",>
-                <section id="main",>
+            <div class="pathbot-wrapper">
+                <section id="main">
                     { self.view_notifications() }
                     { self.view_room() }
                     { self.view_buttons() }
-                    <components::Compass: maze_exit_hint=exit_hint,/>
+                    <components::Compass: maze_exit_hint=exit_hint/>
                 </section>
             </div>
         }
@@ -156,7 +156,7 @@ impl Model {
 impl Model {
     fn view_notifications(&self) -> Html<Model> {
         html! {
-            <div id="notifications",>
+            <div id="notifications">
                 { for self.notifications
                         .iter()
                         .map(|(id, notif)| view_notification(id, notif)) }
@@ -173,10 +173,10 @@ impl Model {
                 };
                 html! {
                     <div>
-                        <p id="status",>{ status }</p>
-                        <p id="message",>{ &room.message }</p>
-                        <p id="exits",>{ format!("{:?}", room.exits) }</p>
-                        <p id="description",>{ &room.description }</p>
+                        <p id="status">{ status }</p>
+                        <p id="message">{ &room.message }</p>
+                        <p id="exits">{ format!("{:?}", room.exits) }</p>
+                        <p id="description">{ &room.description }</p>
                     </div>
                 }
             } else {
@@ -194,11 +194,11 @@ impl Model {
     fn view_buttons(&self) -> Html<Model> {
         if !self.loading() {
             html! {
-                <div id="buttons",>
-                    <button class="", onclick=|_| Msg::FetchNextRoom(MoveDirection::W),>{ "W" }</button>
-                    <button class="", onclick=|_| Msg::FetchNextRoom(MoveDirection::N),>{ "N" }</button>
-                    <button class="", onclick=|_| Msg::FetchNextRoom(MoveDirection::S),>{ "S" }</button>
-                    <button class="", onclick=|_| Msg::FetchNextRoom(MoveDirection::E),>{ "E" }</button>
+                <div id="buttons">
+                    <button class="" onclick=|_| Msg::FetchNextRoom(MoveDirection::W)>{ "W" }</button>
+                    <button class="" onclick=|_| Msg::FetchNextRoom(MoveDirection::N)>{ "N" }</button>
+                    <button class="" onclick=|_| Msg::FetchNextRoom(MoveDirection::S)>{ "S" }</button>
+                    <button class="" onclick=|_| Msg::FetchNextRoom(MoveDirection::E)>{ "E" }</button>
                 </div>
             }
         } else {
@@ -212,8 +212,8 @@ impl Model {
 fn view_notification(id: &NotificationId, notification: &Notification) -> Html<Model> {
     let id = id.clone();
     html! {
-        <components::Notification: notification=notification.clone(),
-            on_close=move |_| Msg::NotificationClosed(id),/>
+        <components::Notification: notification=notification.clone()
+            on_close=move |_| Msg::NotificationClosed(id)/>
     }
 }
 

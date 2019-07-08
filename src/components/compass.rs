@@ -1,4 +1,3 @@
-use log::*;
 use yew::{html, Component, ComponentLink, Html, Renderable, ShouldRender};
 
 use crate::MazeExitHint;
@@ -55,7 +54,7 @@ impl Renderable<Compass> for Compass {
                 angle
             );
             html! {
-                <div div="compass", style=rotate_style,>
+                <div div="compass" style=rotate_style>
                     <p>{ format!("Direction: {}", direction) }</p>
                     <p>{ format!("Distance: {}", exit_hint.distance) }</p>
                     <p>{ format!("Angle: {}", angle) }</p>
@@ -63,7 +62,7 @@ impl Renderable<Compass> for Compass {
             }
         } else {
             html! {
-                <div div="compass",>
+                <div id="compass">
                     <p>{ "No compass" }</p>
                 </div>
             }

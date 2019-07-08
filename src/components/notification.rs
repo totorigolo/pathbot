@@ -71,8 +71,8 @@ impl Renderable<Notification> for Notification {
             NotificationLevel::Danger => "notification is-danger",
         };
         html! {
-            <div class=class,>
-                <button class="delete", onclick=|_| Msg::Closed,></button>
+            <div class=class>
+                <button class="delete" onclick=|_| Msg::Closed></button>
                 { &self.data.message }
             </div>
         }
