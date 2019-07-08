@@ -27,20 +27,17 @@ impl Component for Compass {
     type Properties = Props;
 
     fn create(_: Self::Properties, _: ComponentLink<Self>) -> Self {
-        trace!("Compass - created");
         Compass {
             maze_exit_hint: None,
         }
     }
 
     fn update(&mut self, _msg: Self::Message) -> ShouldRender {
-        trace!("Compass - update");
         // match msg {}
         true
     }
 
     fn change(&mut self, props: Self::Properties) -> ShouldRender {
-        trace!("Compass - change");
         self.maze_exit_hint = props.maze_exit_hint;
         true
     }

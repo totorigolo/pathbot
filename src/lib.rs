@@ -1,4 +1,4 @@
-#![feature(option_flattening)]
+#![recursion_limit = "128"]
 
 use failure::{format_err, Error};
 use log::*;
@@ -13,7 +13,6 @@ mod components;
 mod entities;
 mod pathbot_api;
 
-use components::compass::Compass;
 use entities::*;
 
 pub struct Model {
@@ -22,6 +21,24 @@ pub struct Model {
     fetch_service: FetchService,
     fetching: bool,
     fetch_task: Option<FetchTask>,
+    notifications: HashMap<NotificationId, Notification>,
+    next_notification_id: NotificationId,
+}
+
+pub type NotificationId = u32;
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct Notification {
+    message: String,
+    level: NotificationLevel,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum NotificationLevel {
+    Info,
+    Success,
+    Warning,
+    Danger,
 }
 
 pub struct State {
@@ -35,7 +52,8 @@ pub enum Msg {
     ReceivedRoom(Room),
     FetchRoomFailed(Error),
     ButtonPressed,
-    Nope,
+    NewNotification(Notification),
+    NotificationClosed(NotificationId),
 }
 
 enum FetchRoomRequest {
@@ -58,6 +76,8 @@ impl Component for Model {
             fetch_service: FetchService::new(),
             fetching: false,
             fetch_task: None,
+            notifications: HashMap::default(),
+            next_notification_id: 0,
         }
     }
 
@@ -76,6 +96,11 @@ impl Component for Model {
                 self.fetching = false;
                 self.state.current_room_id = Some(room.location_path.clone());
                 self.state.rooms.insert(room.location_path.clone(), room);
+
+                self.link.send_self(Msg::NewNotification(Notification {
+                    message: "Received a new room.".to_string(),
+                    level: NotificationLevel::Info,
+                }));
             }
             Msg::FetchRoomFailed(response) => {
                 self.fetching = false;
@@ -84,8 +109,14 @@ impl Component for Model {
             Msg::ButtonPressed => {
                 info!("Button pressed");
             }
-            Msg::Nope => {
-                return false;
+            Msg::NewNotification(notification) => {
+                let id = self.next_notification_id;
+                self.next_notification_id += 1;
+
+                self.notifications.insert(id, notification);
+            }
+            Msg::NotificationClosed(notification_id) => {
+                self.notifications.remove(&notification_id);
             }
         }
         true
@@ -99,9 +130,10 @@ impl Renderable<Model> for Model {
         html! {
             <div class="pathbot-wrapper",>
                 <section id="main",>
+                    { self.view_notifications() }
                     { self.view_room() }
                     { self.view_buttons() }
-                    <Compass: maze_exit_hint=exit_hint,/>
+                    <components::Compass: maze_exit_hint=exit_hint,/>
                 </section>
             </div>
         }
@@ -117,8 +149,19 @@ impl Model {
         self.state
             .current_room_id
             .as_ref()
-            .map(|id| self.state.rooms.get(id))
-            .flatten()
+            .and_then(|id| self.state.rooms.get(id))
+    }
+}
+
+impl Model {
+    fn view_notifications(&self) -> Html<Model> {
+        html! {
+            <div id="notifications",>
+                { for self.notifications
+                        .iter()
+                        .map(|(id, notif)| view_notification(id, notif)) }
+            </div>
+        }
     }
 
     fn view_room(&self) -> Html<Model> {
@@ -129,10 +172,12 @@ impl Model {
                     RoomStatus::Finished => "Finished",
                 };
                 html! {
-                    <p id="status",>{ status }</p>
-                    <p id="message",>{ &room.message }</p>
-                    <p id="exits",>{ format!("{:?}", room.exits) }</p>
-                    <p id="description",>{ &room.description }</p>
+                    <div>
+                        <p id="status",>{ status }</p>
+                        <p id="message",>{ &room.message }</p>
+                        <p id="exits",>{ format!("{:?}", room.exits) }</p>
+                        <p id="description",>{ &room.description }</p>
+                    </div>
                 }
             } else {
                 html! {
@@ -162,13 +207,28 @@ impl Model {
             }
         }
     }
+}
 
+fn view_notification(id: &NotificationId, notification: &Notification) -> Html<Model> {
+    let id = id.clone();
+    html! {
+        <components::Notification: notification=notification.clone(),
+            on_close=move |_| Msg::NotificationClosed(id),/>
+    }
+}
+
+impl Model {
     fn fetch(&mut self, request: FetchRoomRequest) {
         if self.fetching {
             warn!("Not sending, ongoing request.");
             return;
         }
         self.fetching = true;
+
+        self.link.send_self(Msg::NewNotification(Notification {
+            message: "Fetching...".to_string(),
+            level: NotificationLevel::Info,
+        }));
 
         // Build the request
         let request: Request<yew::format::Text> = match request {
@@ -187,6 +247,7 @@ impl Model {
                     .unwrap() // cannot really fail (except OOM)
             }
         };
+
         // Send the request
         use pathbot_api::RawRoom;
         let callback =
