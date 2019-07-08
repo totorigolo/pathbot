@@ -1,6 +1,6 @@
 #![recursion_limit = "128"]
 
-use failure::{format_err, Error};
+use failure::Error;
 use log::*;
 use serde_json::json;
 use std::collections::HashMap;
@@ -8,12 +8,12 @@ use yew::format::Json;
 use yew::html;
 use yew::prelude::*;
 use yew::services::fetch::{FetchService, FetchTask, Request, Response};
+use linked_hash_map::LinkedHashMap;
 
 mod components;
-mod entities;
 mod pathbot_api;
 
-use entities::*;
+use pathbot_api::*;
 
 pub struct Model {
     state: State,
@@ -21,7 +21,7 @@ pub struct Model {
     fetch_service: FetchService,
     fetching: bool,
     fetch_task: Option<FetchTask>,
-    notifications: HashMap<NotificationId, Notification>,
+    notifications: LinkedHashMap<NotificationId, Notification>,
     next_notification_id: NotificationId,
 }
 
@@ -49,9 +49,10 @@ pub struct State {
 pub enum Msg {
     Init,
     FetchNextRoom(MoveDirection),
+    Fetching,
     ReceivedRoom(Room),
+    ReceivedMessage(Message),
     FetchRoomFailed(Error),
-    ButtonPressed,
     NewNotification(Notification),
     NotificationClosed(NotificationId),
 }
@@ -76,7 +77,7 @@ impl Component for Model {
             fetch_service: FetchService::new(),
             fetching: false,
             fetch_task: None,
-            notifications: HashMap::default(),
+            notifications: LinkedHashMap::default(),
             next_notification_id: 0,
         }
     }
@@ -92,6 +93,9 @@ impl Component for Model {
                 }
                 None => error!("Logic error: no current room."),
             },
+            Msg::Fetching => {
+                return false;
+            }
             Msg::ReceivedRoom(room) => {
                 self.fetching = false;
                 self.state.current_room_id = Some(room.location_path.clone());
@@ -102,12 +106,26 @@ impl Component for Model {
                     level: NotificationLevel::Info,
                 }));
             }
+            Msg::ReceivedMessage(message) => {
+                self.fetching = false;
+
+                self.link.send_self(Msg::NewNotification(Notification {
+                    message: format!("{}", message.message),
+                    level: NotificationLevel::Warning,
+                }));
+            }
             Msg::FetchRoomFailed(response) => {
                 self.fetching = false;
                 error!("Fetching room failed: {:?}", response);
-            }
-            Msg::ButtonPressed => {
-                info!("Button pressed");
+
+                self.link.send_self(Msg::NewNotification(Notification {
+                    message: format!(
+                        "An error occurred while communicating \
+                         with the API: {}",
+                        response
+                    ),
+                    level: NotificationLevel::Warning,
+                }));
             }
             Msg::NewNotification(notification) => {
                 let id = self.next_notification_id;
@@ -128,14 +146,12 @@ impl Renderable<Model> for Model {
         let current_room = self.current_room();
         let exit_hint = current_room.map(|r| r.maze_exit_hint);
         html! {
-            <div class="pathbot-wrapper">
-                <section id="main">
-                    { self.view_notifications() }
-                    { self.view_room() }
-                    { self.view_buttons() }
-                    <components::Compass: maze_exit_hint=exit_hint/>
-                </section>
-            </div>
+            <section>
+                { self.view_notifications() }
+                <components::Compass: maze_exit_hint=exit_hint/>
+                { self.view_room() }
+                { self.view_buttons() }
+            </section>
         }
     }
 }
@@ -229,11 +245,7 @@ impl Model {
             return;
         }
         self.fetching = true;
-
-        self.link.send_self(Msg::NewNotification(Notification {
-            message: "Fetching...".to_string(),
-            level: NotificationLevel::Info,
-        }));
+        self.link.send_self(Msg::Fetching);
 
         // Build the request
         let request: Request<yew::format::Text> = match request {
@@ -254,23 +266,16 @@ impl Model {
         };
 
         // Send the request
-        use pathbot_api::RawRoom;
         let callback =
             self.link
-                .send_back(move |response: Response<Json<Result<RawRoom, Error>>>| {
-                    let (meta, Json(data)) = response.into_parts();
-                    if meta.status.is_success() {
-                        match data.map(|raw| raw.into()) {
-                            Ok(room) => Msg::ReceivedRoom(room),
-                            Err(e) => Msg::FetchRoomFailed(e),
-                        }
-                    } else {
-                        match data {
-                            Ok(received) => {
-                                Msg::FetchRoomFailed(format_err!("Received error: {:?}", received))
-                            }
-                            Err(e) => Msg::FetchRoomFailed(e),
-                        }
+                .send_back(move |response: Response<Json<Result<_, Error>>>| {
+                    let (_meta, Json(data)) = response.into_parts();
+                    match data {
+                        Ok(PathbotApiMessage::Room(room)) =>
+                            Msg::ReceivedRoom(room),
+                        Ok(PathbotApiMessage::Message(message)) =>
+                            Msg::ReceivedMessage(message),
+                        Err(e) => Msg::FetchRoomFailed(e),
                     }
                 });
         let task = self.fetch_service.fetch(request, callback);
