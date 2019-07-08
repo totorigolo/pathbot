@@ -155,6 +155,14 @@ impl Model {
 
 impl Model {
     fn view_notifications(&self) -> Html<Model> {
+        let view_notification = |id: &NotificationId, notification: &Notification| {
+            let id = id.clone();
+            html! {
+                <components::Notification: notification=notification.clone()
+                    on_close=move |_| Msg::NotificationClosed(id)/>
+            }
+        };
+
         html! {
             <div id="notifications">
                 { for self.notifications
@@ -193,12 +201,17 @@ impl Model {
 
     fn view_buttons(&self) -> Html<Model> {
         if !self.loading() {
+            use MoveDirection::*;
             html! {
                 <div id="buttons">
-                    <button class="" onclick=|_| Msg::FetchNextRoom(MoveDirection::W)>{ "W" }</button>
-                    <button class="" onclick=|_| Msg::FetchNextRoom(MoveDirection::N)>{ "N" }</button>
-                    <button class="" onclick=|_| Msg::FetchNextRoom(MoveDirection::S)>{ "S" }</button>
-                    <button class="" onclick=|_| Msg::FetchNextRoom(MoveDirection::E)>{ "E" }</button>
+                    <button class="btn btn--primary"
+                        onclick=|_| Msg::FetchNextRoom(W)>{ "W" }</button>
+                    <button class="btn btn--primary"
+                        onclick=|_| Msg::FetchNextRoom(N)>{ "N" }</button>
+                    <button class="btn btn--primary"
+                        onclick=|_| Msg::FetchNextRoom(S)>{ "S" }</button>
+                    <button class="btn btn--primary"
+                        onclick=|_| Msg::FetchNextRoom(E)>{ "E" }</button>
                 </div>
             }
         } else {
@@ -206,14 +219,6 @@ impl Model {
                 <p>{ "Please wait" }</p>
             }
         }
-    }
-}
-
-fn view_notification(id: &NotificationId, notification: &Notification) -> Html<Model> {
-    let id = id.clone();
-    html! {
-        <components::Notification: notification=notification.clone()
-            on_close=move |_| Msg::NotificationClosed(id)/>
     }
 }
 
