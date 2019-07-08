@@ -100,11 +100,6 @@ impl Component for Model {
                 self.fetching = false;
                 self.state.current_room_id = Some(room.location_path.clone());
                 self.state.rooms.insert(room.location_path.clone(), room);
-
-                self.link.send_self(Msg::NewNotification(Notification {
-                    message: "Received a new room.".to_string(),
-                    level: NotificationLevel::Info,
-                }));
             }
             Msg::ReceivedMessage(message) => {
                 self.fetching = false;
