@@ -265,9 +265,12 @@ impl Model {
             RoomStatus::InProgress => "In progress",
             RoomStatus::Finished => "Finished",
         };
-        let exit_li = |direction: &MoveDirection| {
+        let view_exit = |(idx, direction): (usize, &MoveDirection)| {
             html! {
-                <li>{ direction.long_name() }</li>
+                <span>
+                    { if idx > 0 { ", " } else { "" } }
+                    { direction.long_name() }
+                </span>
             }
         };
         match &self.state.status {
@@ -285,9 +288,10 @@ impl Model {
                                 { " exit" }
                                 { if room.exits.len() == 1 { "" } else { "s" } }
                                 { ": " }
-                                <ul>
-                                    { for room.exits.iter().map(exit_li) }
-                                </ul>
+                                <span>
+                                    { for room.exits.iter().enumerate().map(view_exit) }
+                                </span>
+                                { "." }
                             </p>
                             <p id="question-action">
                                 { "What do you want to do?" }
@@ -485,13 +489,12 @@ impl State {
 
         context.clear_rect(0., 0., canvas.width() as f64, canvas.height() as f64);
 
-        const ROOM_W: f64 = 30.;
-        const ROOM_H: f64 = 30.;
-        const EXIT_SHIFT: f64 = 5.;
-        const EXIT_L: f64 = 5. + 2. * EXIT_SHIFT;
+        const ROOM_W: f64 = 20.;
+        const ROOM_H: f64 = 20.;
+        const EXIT_L: f64 = 5.;
         const EXIT_LW: f64 = 2.;
-        const SHIFT_X: f64 = ROOM_W / 2. - EXIT_SHIFT;
-        const SHIFT_Y: f64 = ROOM_H / 2. - EXIT_SHIFT;
+        const SHIFT_X: f64 = ROOM_W / 2.;
+        const SHIFT_Y: f64 = ROOM_H / 2.;
 
         context.set_line_width(EXIT_LW);
 
