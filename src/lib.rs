@@ -1,4 +1,4 @@
-#![recursion_limit = "128"]
+#![recursion_limit = "256"]
 
 use failure::Error;
 use log::*;
@@ -25,7 +25,22 @@ pub struct Model {
     next_notification_id: NotificationId,
 }
 
-pub type NotificationId = u32;
+type NotificationId = u32;
+type RoomId = String;
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct State {
+    rooms: HashMap<RoomId, Room>,
+    status: Status,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum Status {
+    Loading,
+    InRoom(RoomId),
+    /// We store the received exit message.
+    Finished(Exit),
+}
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct Notification {
@@ -41,17 +56,13 @@ pub enum NotificationLevel {
     Danger,
 }
 
-pub struct State {
-    rooms: HashMap<String, Room>,
-    current_room_id: Option<String>,
-}
-
 pub enum Msg {
     Init,
     FetchNextRoom(MoveDirection),
     Fetching,
     ReceivedRoom(Room),
     ReceivedMessage(Message),
+    ReceivedExit(Exit),
     FetchRoomFailed(Error),
     NewNotification(Notification),
     NotificationClosed(NotificationId),
@@ -69,7 +80,7 @@ impl Component for Model {
     fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
         let state = State {
             rooms: HashMap::default(),
-            current_room_id: None,
+            status: Status::Loading,
         };
         Model {
             state,
@@ -87,18 +98,19 @@ impl Component for Model {
             Msg::Init => {
                 self.fetch(FetchRoomRequest::StartRoom);
             }
-            Msg::FetchNextRoom(direction) => match self.state.current_room_id.clone() {
-                Some(current_room_id) => {
+            Msg::FetchNextRoom(direction) => match self.state.status.clone() {
+                Status::Loading => error!("Logic error: no current room."),
+                Status::InRoom(current_room_id) => {
                     self.fetch(FetchRoomRequest::NextRoom(current_room_id, direction));
                 }
-                None => error!("Logic error: no current room."),
+                Status::Finished(_) => error!("Logic error: no more room."),
             },
             Msg::Fetching => {
                 return false;
             }
             Msg::ReceivedRoom(room) => {
                 self.fetching = false;
-                self.state.current_room_id = Some(room.location_path.clone());
+                self.state.status = Status::InRoom(room.location_path.clone());
                 self.state.rooms.insert(room.location_path.clone(), room);
             }
             Msg::ReceivedMessage(message) => {
@@ -107,6 +119,15 @@ impl Component for Model {
                 self.link.send_self(Msg::NewNotification(Notification {
                     message: format!("{}", message.message),
                     level: NotificationLevel::Warning,
+                }));
+            }
+            Msg::ReceivedExit(exit) => {
+                self.fetching = false;
+                self.state.status = Status::Finished(exit);
+
+                self.link.send_self(Msg::NewNotification(Notification {
+                    message: "Congratulations! You exited the maze!".to_string(),
+                    level: NotificationLevel::Success,
                 }));
             }
             Msg::FetchRoomFailed(response) => {
@@ -153,14 +174,14 @@ impl Renderable<Model> for Model {
 
 impl Model {
     fn loading(&self) -> bool {
-        self.fetching || self.state.current_room_id.is_none()
+        self.fetching || self.state.status == Status::Loading
     }
 
     fn current_room(&self) -> Option<&Room> {
-        self.state
-            .current_room_id
-            .as_ref()
-            .and_then(|id| self.state.rooms.get(id))
+        match &self.state.status {
+            Status::InRoom(id) => self.state.rooms.get(id),
+            _ => None,
+        }
     }
 }
 
@@ -184,45 +205,68 @@ impl Model {
     }
 
     fn view_room(&self) -> Html<Model> {
-        if let Some(room_id) = &self.state.current_room_id {
-            if let Some(room) = self.state.rooms.get(room_id) {
-                let status = match room.status {
-                    RoomStatus::InProgress => "In progress",
-                    RoomStatus::Finished => "Finished",
-                };
-                html! {
-                    <div>
-                        <p id="status">{ status }</p>
-                        <p id="message">{ &room.message }</p>
-                        <p id="exits">{ format!("{:?}", room.exits) }</p>
-                        <p id="description">{ &room.description }</p>
-                    </div>
+        let status_to_str = |status| match status {
+            RoomStatus::InProgress => "In progress",
+            RoomStatus::Finished => "Finished",
+        };
+        let exit_li = |direction: &MoveDirection| html! {
+            <li>{ direction.long_name() }</li>
+        };
+        match &self.state.status {
+            Status::Loading => html! { <h1>{ "Loading..." }</h1> },
+            Status::InRoom(room_id) => {
+                if let Some(room) = self.state.rooms.get(room_id) {
+                    html! {
+                        <div>
+                            <p id="status">{ status_to_str(room.status) }</p>
+                            <p id="message">{ &room.message }</p>
+                            <p id="description">{ &room.description }</p>
+                            <p id="exits">
+                                { "This room has " }
+                                { format!("{}", room.exits.len()) }
+                                { " exit" }
+                                { if room.exits.len() == 1 { "" } else { "s" } }
+                                { ": " }
+                                <ul>
+                                    { for room.exits.iter().map(exit_li) }
+                                </ul>
+                            </p>
+                            <p id="question-action">
+                                { "What do you want to do?" }
+                            </p>
+                        </div>
+                    }
+                } else {
+                    html! {
+                        <p>{ "Error: unknown room." }</p>
+                    }
                 }
-            } else {
-                html! {
-                    <p>{ "Error: unknown room." }</p>
-                }
-            }
-        } else {
-            html! {
-                <h1>{ "Loading..." }</h1>
-            }
+            },
+            Status::Finished(exit) => html! {
+                <div>
+                    <p id="status">{ status_to_str(exit.status) }</p>
+                    <p id="description">{ &exit.description }</p>
+                </div>
+            },
         }
     }
 
     fn view_buttons(&self) -> Html<Model> {
         if !self.loading() {
             use MoveDirection::*;
+            let button = |direction: MoveDirection| html! {
+                <button class="btn btn--primary" style="margin-left: 5px;"
+                    onclick=|_| Msg::FetchNextRoom(direction)>
+                    { "Go " }{ direction.long_name() }
+                </button>
+            };
             html! {
                 <div id="buttons">
-                    <button class="btn btn--primary"
-                        onclick=|_| Msg::FetchNextRoom(W)>{ "W" }</button>
-                    <button class="btn btn--primary"
-                        onclick=|_| Msg::FetchNextRoom(N)>{ "N" }</button>
-                    <button class="btn btn--primary"
-                        onclick=|_| Msg::FetchNextRoom(S)>{ "S" }</button>
-                    <button class="btn btn--primary"
-                        onclick=|_| Msg::FetchNextRoom(E)>{ "E" }</button>
+                    { for [W, N, S, E].iter().cloned().map(button) }
+                    <button class="btn btn--primary" style="margin-left: 5px;"
+                        onclick=|_| Msg::Init>
+                        { "Restart" }
+                    </button>
                 </div>
             }
         } else {
@@ -270,6 +314,8 @@ impl Model {
                             Msg::ReceivedRoom(room),
                         Ok(PathbotApiMessage::Message(message)) =>
                             Msg::ReceivedMessage(message),
+                        Ok(PathbotApiMessage::Exit(exit)) =>
+                            Msg::ReceivedExit(exit),
                         Err(e) => Msg::FetchRoomFailed(e),
                     }
                 });

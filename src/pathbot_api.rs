@@ -13,6 +13,7 @@ use std::convert::From;
 pub enum PathbotApiMessage {
     Room(Room),
     Message(Message),
+    Exit(Exit),
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -140,6 +141,12 @@ impl CompassDirection {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Message {
     pub message: String,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct Exit {
+    pub status: RoomStatus,
+    pub description: String,
 }
 
 /*
