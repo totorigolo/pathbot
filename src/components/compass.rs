@@ -44,31 +44,33 @@ impl Component for Compass {
 
 impl Renderable<Compass> for Compass {
     fn view(&self) -> Html<Self> {
-        if let Some(exit_hint) = self.maze_exit_hint {
-            let direction = exit_hint.direction.long_name();
-            let angle = exit_hint.direction.angle_deg(); // clockwise
-            let rotate_style = format!(
-                "transform: rotate({}deg); \
+        let compass_style = "float: right; margin: 10px;";
+        let (direction, angle, distance) = match self.maze_exit_hint {
+            Some(exit_hint) => (
+                exit_hint.direction.long_name(),
+                exit_hint.direction.angle_deg(), // clockwise
+                Some(exit_hint.distance),
+            ),
+            None => ("?", 0., None)
+        };
+        let rotate_style = format!(
+            "transform: rotate({}deg); \
                  width:100px; \
                  height:100px;",
-                angle
-            );
-            html! {
-                <div class="compass" style="float: right">
-                    <img src="compass.png" style=rotate_style />
-                    <p>
-                        { format!("Direction: {}", direction) }
-                        <br />
-                        { format!("Distance: {}", exit_hint.distance) }
-                    </p>
-                </div>
-            }
-        } else {
-            html! {
-                <div id="compass">
-                    <p>{ "No compass" }</p>
-                </div>
-            }
+            angle
+        );
+        let distance_str = distance
+            .map(|d| format!("{}", d))
+            .unwrap_or("?".to_string());
+        html! {
+            <div class="compass" style=compass_style>
+                <img src="compass.png" style=rotate_style />
+                <p>
+                    { "Direction: "}{ direction }
+                    <br />
+                    { "Distance: "}{ distance_str }
+                </p>
+            </div>
         }
     }
 }
