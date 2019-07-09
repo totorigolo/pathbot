@@ -6,8 +6,7 @@ use crate::Notification as NotificationData;
 use crate::NotificationLevel;
 
 pub struct Notification {
-    data: NotificationData,
-    on_close: Option<Callback<()>>,
+    props: Props,
 }
 
 pub enum Msg {
@@ -37,15 +36,12 @@ impl Component for Notification {
     type Properties = Props;
 
     fn create(props: Self::Properties, _: ComponentLink<Self>) -> Self {
-        Notification {
-            data: props.notification,
-            on_close: props.on_close,
-        }
+        Notification { props }
     }
 
     fn update(&mut self, msg: Self::Message) -> ShouldRender {
         match msg {
-            Msg::Closed => match self.on_close {
+            Msg::Closed => match self.props.on_close {
                 Some(ref mut callback) => callback.emit(()),
                 None => error!("No callback on notification."),
             },
@@ -54,15 +50,14 @@ impl Component for Notification {
     }
 
     fn change(&mut self, props: Self::Properties) -> ShouldRender {
-        self.data = props.notification;
-        self.on_close = props.on_close;
+        self.props = props;
         true
     }
 }
 
 impl Renderable<Notification> for Notification {
     fn view(&self) -> Html<Self> {
-        let notif_class = match self.data.level {
+        let notif_class = match self.props.notification.level {
             NotificationLevel::Info => "notice--info",
             NotificationLevel::Success => "notice--success",
             NotificationLevel::Warning => "notice--warning",
@@ -70,7 +65,7 @@ impl Renderable<Notification> for Notification {
         };
         html! {
             <div class=notif_class>
-                { &self.data.message }
+                { &self.props.notification.message }
                 <button style="float: right" class="btn btn--primary"
                     onclick=|_| Msg::Closed>{ "x" }</button>
             </div>

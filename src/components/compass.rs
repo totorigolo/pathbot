@@ -3,7 +3,7 @@ use yew::{html, Component, ComponentLink, Html, Renderable, ShouldRender};
 use crate::MazeExitHint;
 
 pub struct Compass {
-    maze_exit_hint: Option<MazeExitHint>,
+    props: Props,
 }
 
 pub enum Msg {}
@@ -25,10 +25,8 @@ impl Component for Compass {
     type Message = Msg;
     type Properties = Props;
 
-    fn create(_: Self::Properties, _: ComponentLink<Self>) -> Self {
-        Compass {
-            maze_exit_hint: None,
-        }
+    fn create(props: Self::Properties, _: ComponentLink<Self>) -> Self {
+        Compass { props }
     }
 
     fn update(&mut self, _msg: Self::Message) -> ShouldRender {
@@ -37,7 +35,7 @@ impl Component for Compass {
     }
 
     fn change(&mut self, props: Self::Properties) -> ShouldRender {
-        self.maze_exit_hint = props.maze_exit_hint;
+        self.props = props;
         true
     }
 }
@@ -45,7 +43,7 @@ impl Component for Compass {
 impl Renderable<Compass> for Compass {
     fn view(&self) -> Html<Self> {
         let compass_style = "float: right; margin: 10px;";
-        let (direction, angle, distance) = match self.maze_exit_hint {
+        let (direction, angle, distance) = match self.props.maze_exit_hint {
             Some(exit_hint) => (
                 exit_hint.direction.long_name(),
                 exit_hint.direction.angle_deg(), // clockwise
