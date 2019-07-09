@@ -1,6 +1,6 @@
 use pathbot::{Model, Msg};
-use yew::App;
 use stdweb::web::{document, IParentNode};
+use yew::App;
 
 fn main() {
     web_logger::init();

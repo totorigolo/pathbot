@@ -203,8 +203,8 @@ impl From<Room> for RawRoom {
 
 impl Serialize for Room {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         let raw_room: RawRoom = self.clone().into();
         raw_room.serialize(serializer)
@@ -213,8 +213,8 @@ impl Serialize for Room {
 
 impl<'de> Deserialize<'de> for Room {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         let raw_room = RawRoom::deserialize(deserializer)?;
         Ok(raw_room.into())
@@ -227,8 +227,8 @@ impl<'de> Deserialize<'de> for Room {
 
 impl Serialize for RoomStatus {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         use RoomStatus::*;
         serializer.serialize_str(match self {
@@ -240,8 +240,8 @@ impl Serialize for RoomStatus {
 
 impl<'de> Deserialize<'de> for RoomStatus {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
+    where
+        D: Deserializer<'de>,
     {
         use RoomStatus::*;
         let s = String::deserialize(deserializer)?;
