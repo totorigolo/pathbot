@@ -330,12 +330,25 @@ impl Model {
     fn view_buttons(&self) -> Html<Model> {
         if !self.loading() {
             use MoveDirection::*;
+            let current_exits = self.state.current_exits();
             let button = |direction: MoveDirection| {
-                html! {
-                    <button class="btn btn--primary btn--large" style="margin-left: 5px;"
-                        onclick=|_| Msg::FetchNextRoom(direction)>
-                        { "Go " }{ direction.long_name() }
-                    </button>
+                let can = if let Some(current_exits) = &current_exits {
+                    current_exits.contains(&direction)
+                } else {
+                    false
+                };
+                match can {
+                    true => html! {
+                        <button class="btn btn--primary btn--large" style="margin-left: 5px;"
+                            onclick=|_| Msg::FetchNextRoom(direction)>
+                            { "Go " }{ direction.long_name() }
+                        </button>
+                    },
+                    false => html! {
+                        <button class="btn btn--inverted btn--large" style="margin-left: 5px;">
+                            { "Go " }{ direction.long_name() }
+                        </button>
+                    },
                 }
             };
             html! {
@@ -468,6 +481,13 @@ impl State {
                 .get(id)
                 .map(|t| &t.0)
                 .map(|r| r.maze_exit_hint.clone()),
+            _ => None,
+        }
+    }
+
+    fn current_exits(&self) -> Option<Vec<MoveDirection>> {
+        match &self.status {
+            Status::InRoom(id) => self.rooms.get(id).map(|t| &t.0).map(|r| r.exits.clone()),
             _ => None,
         }
     }
