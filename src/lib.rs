@@ -318,7 +318,7 @@ impl Model {
             use MoveDirection::*;
             let button = |direction: MoveDirection| {
                 html! {
-                    <button class="btn btn--primary" style="margin-left: 5px;"
+                    <button class="btn btn--primary btn--large" style="margin-left: 5px;"
                         onclick=|_| Msg::FetchNextRoom(direction)>
                         { "Go " }{ direction.long_name() }
                     </button>
@@ -327,10 +327,11 @@ impl Model {
             html! {
                 <div id="buttons">
                     { for [W, N, S, E].iter().cloned().map(button) }
-                    <button class="btn btn--primary" style="margin-left: 5px;"
-                        onclick=|_| Msg::Init>
-                        { "Restart" }
-                    </button>
+                    // TODO: Restart feature
+                    //<button class="btn btn--primary" style="margin-left: 5px;"
+                    //    onclick=|_| Msg::Init>
+                    //    { "Restart" }
+                    //</button>
                 </div>
             }
         } else {
