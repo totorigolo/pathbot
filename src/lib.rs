@@ -27,6 +27,7 @@ pub struct Model {
     link: ComponentLink<Model>,
     fetch_service: FetchService,
     fetching: bool,
+    fetching_move: Option<MoveDirection>,
     fetch_task: Option<FetchTask>,
     /// This is a LinkedHashMap to enable iteration in insertion order.
     notifications: LinkedHashMap<NotificationId, Notification>,
@@ -38,7 +39,8 @@ type NotificationId = u32;
 #[derive(PartialEq, Debug, Clone)]
 pub struct State {
     rooms: HashMap<RoomId, (Room, Coordinate)>,
-    map: HashMap<Coordinate, RoomId>,
+    room_coords: HashMap<RoomId, Coordinate>,
+    coord_to_id: HashMap<Coordinate, RoomId>,
     status: Status,
 }
 
@@ -46,7 +48,8 @@ impl Default for State {
     fn default() -> Self {
         State {
             rooms: HashMap::default(),
-            map: HashMap::default(),
+            room_coords: HashMap::default(),
+            coord_to_id: HashMap::default(),
             status: Status::Loading,
         }
     }
@@ -54,7 +57,7 @@ impl Default for State {
 
 type RoomId = String;
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
 pub struct Coordinate {
     pub x: i32,
     pub y: i32,
@@ -96,15 +99,16 @@ pub enum NotificationLevel {
 pub enum Msg {
     Init,
     FetchNextRoom(MoveDirection),
-    Fetching,
     /// Contains the last move.
     ReceivedRoom(Room, Option<MoveDirection>),
+    MoveToRoom(RoomId),
     ReceivedMessage(Message),
     /// Contains the last move.
     ReceivedExit(Exit, Option<MoveDirection>),
     FetchRoomFailed(Error),
     NewNotification(Notification),
     NotificationClosed(NotificationId),
+    Noop,
 }
 
 enum FetchRoomRequest {
@@ -117,16 +121,13 @@ impl Component for Model {
     type Properties = ();
 
     fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
-        let state = State {
-            rooms: Default::default(),
-            map: Default::default(),
-            status: Status::Loading,
-        };
+        let state = State::default();
         Model {
             state,
             link,
             fetch_service: FetchService::new(),
             fetching: false,
+            fetching_move: None,
             fetch_task: None,
             notifications: LinkedHashMap::default(),
             next_notification_id: 0,
@@ -149,16 +150,21 @@ impl Component for Model {
                     Status::Finished(_) => error!("Logic error: no more room."),
                 }
             }
-            Msg::Fetching => {
-                return false;
-            }
             Msg::ReceivedRoom(room, last_move) => {
                 self.fetching = false;
+                self.fetching_move = None;
+
+                let room_id = room.location_path.clone();
                 self.state.insert_room(room, last_move);
+                self.link.send_self(Msg::MoveToRoom(room_id));
+            }
+            Msg::MoveToRoom(room_id) => {
+                self.state.status = Status::InRoom(room_id);
                 self.state.draw_map();
             }
             Msg::ReceivedMessage(message) => {
                 self.fetching = false;
+                self.fetching_move = None;
 
                 self.link.send_self(Msg::NewNotification(Notification {
                     message: format!("{}", message.message),
@@ -167,9 +173,12 @@ impl Component for Model {
             }
             Msg::ReceivedExit(exit, last_move) => {
                 self.fetching = false;
+                self.fetching_move = None;
                 self.state.status = Status::Finished(exit.clone());
 
-                // Fake a room
+                // Fake a room (for the map)
+                // TODO: Shouldn't have to fake a room
+                let exit_room_id = "exit_room_yay".to_string();
                 let room = Room {
                     status: RoomStatus::Finished,
                     message: "Thank you for playing :)".to_string(),
@@ -181,9 +190,10 @@ impl Component for Model {
                         distance: 0,
                     },
                     // TODO: Should be None
-                    location_path: "".to_string(),
+                    location_path: exit_room_id.clone(),
                 };
                 self.state.insert_room(room, last_move);
+                self.link.send_self(Msg::MoveToRoom(exit_room_id));
 
                 self.link.send_self(Msg::NewNotification(Notification {
                     message: "Congratulations! You exited the maze!".to_string(),
@@ -192,6 +202,7 @@ impl Component for Model {
             }
             Msg::FetchRoomFailed(response) => {
                 self.fetching = false;
+                self.fetching_move = None;
                 error!("Fetching room failed: {:?}", response);
 
                 self.link.send_self(Msg::NewNotification(Notification {
@@ -211,6 +222,9 @@ impl Component for Model {
             }
             Msg::NotificationClosed(notification_id) => {
                 self.notifications.remove(&notification_id);
+            }
+            Msg::Noop => {
+                return false;
             }
         }
         true
@@ -274,7 +288,7 @@ impl Model {
             }
         };
         match &self.state.status {
-            Status::Loading => html! { <h1>{ "Loading..." }</h1> },
+            Status::Loading => html! { <h1>{ "Loading first room..." }</h1> },
             Status::InRoom(room_id) => {
                 if let Some((room, _coord)) = self.state.rooms.get(room_id) {
                     html! {
@@ -343,12 +357,11 @@ impl Model {
 
     fn view_map(&self) -> Html<Model> {
         const DISPLAY_NONE: &'static str = "display: none";
-        const MAP_LOST: &'static str = "border: 2px solid black";
-        const MAP_FINISHED: &'static str = "border: 2px solid black; zoom=2";
+        const MAP_BORDER: &'static str = "border: 2px solid black";
         let (div_style, map_style) = match &self.state.status {
             Status::Loading => (DISPLAY_NONE, ""),
-            Status::InRoom(_) => ("", MAP_LOST),
-            Status::Finished(_) => ("", MAP_FINISHED),
+            Status::InRoom(_) => ("", MAP_BORDER),
+            Status::Finished(_) => ("", MAP_BORDER),
         };
         html! {
             <div style=div_style>
@@ -369,7 +382,32 @@ impl Model {
             return;
         }
         self.fetching = true;
-        self.link.send_self(Msg::Fetching);
+        self.fetching_move = None;
+
+        // Save the fetched direction
+        self.fetching_move = match &request {
+            FetchRoomRequest::StartRoom => None,
+            FetchRoomRequest::NextRoom(_, dir) => Some(*dir),
+        };
+
+        // Check if the room is cached
+        match &request {
+            FetchRoomRequest::NextRoom(_, move_direction) => {
+                // Compute the next room's coordinates
+                let cur = self
+                    .state
+                    .current_coordinates()
+                    .expect("Logic error: must have a room");
+                let next_coords = cur + move_direction.delta();
+
+                if let Some(room_id) = self.state.coord_to_id.get(&next_coords) {
+                    self.fetching = false;
+                    self.link.send_self(Msg::MoveToRoom(room_id.clone()));
+                    return;
+                };
+            }
+            _ => {}
+        }
 
         // Build the request
         let (request, last_move): (Request<Text>, _) = match request {
@@ -449,6 +487,11 @@ impl State {
     }
 
     fn insert_room(&mut self, room: Room, last_move: Option<MoveDirection>) {
+        // TODO: There are too many clone here
+
+        let cache_room_id = room.location_path.clone();
+
+        // Save the room, with its position
         let position = match last_move {
             Some(prev_move) => {
                 let prev_id = match &self.status {
@@ -464,19 +507,17 @@ impl State {
                     .cloned()
                     .expect("Logic error: room must exist.")
                     .1;
-                let delta = match prev_move {
-                    MoveDirection::N => Coordinate { x: 0, y: -1 },
-                    MoveDirection::S => Coordinate { x: 0, y: 1 },
-                    MoveDirection::W => Coordinate { x: -1, y: 0 },
-                    MoveDirection::E => Coordinate { x: 1, y: 0 },
-                };
-                prev_position + delta
+                prev_position + prev_move.delta()
             }
             None => Coordinate { x: 0, y: 0 },
         };
         self.status = Status::InRoom(room.location_path.clone());
         self.rooms
             .insert(room.location_path.clone(), (room, position));
+
+        // Add to the caches
+        self.room_coords.insert(cache_room_id.clone(), position);
+        self.coord_to_id.insert(position, cache_room_id);
     }
 
     fn draw_map(&self) {
@@ -553,6 +594,17 @@ impl State {
                 ROOM_W,
                 ROOM_H,
             );
+        }
+    }
+}
+
+impl MoveDirection {
+    fn delta(&self) -> Coordinate {
+        match &self {
+            MoveDirection::N => Coordinate { x: 0, y: -1 },
+            MoveDirection::S => Coordinate { x: 0, y: 1 },
+            MoveDirection::W => Coordinate { x: -1, y: 0 },
+            MoveDirection::E => Coordinate { x: 1, y: 0 },
         }
     }
 }

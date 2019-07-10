@@ -40,7 +40,7 @@ pub struct MazeExitHint {
     pub distance: u32,
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
 pub enum MoveDirection {
     N,
     S,
@@ -81,7 +81,7 @@ impl MoveDirection {
     }
 }
 
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Hash, Debug, Copy, Clone)]
 pub enum CompassDirection {
     N,
     S,
