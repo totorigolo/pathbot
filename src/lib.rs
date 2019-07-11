@@ -328,43 +328,40 @@ impl Model {
     }
 
     fn view_buttons(&self) -> Html<Model> {
-        if !self.loading() {
-            use MoveDirection::*;
-            let current_exits = self.state.current_exits();
-            let button = |direction: MoveDirection| {
-                let can = if let Some(current_exits) = &current_exits {
-                    current_exits.contains(&direction)
-                } else {
-                    false
-                };
-                match can {
-                    true => html! {
-                        <button class="btn btn--primary btn--large" style="margin-left: 5px;"
-                            onclick=|_| Msg::FetchNextRoom(direction)>
-                            { "Go " }{ direction.long_name() }
-                        </button>
-                    },
-                    false => html! {
-                        <button class="btn btn--inverted btn--large" style="margin-left: 5px;">
-                            { "Go " }{ direction.long_name() }
-                        </button>
-                    },
-                }
+        let loading = self.loading();
+
+        use MoveDirection::*;
+        let current_exits = self.state.current_exits();
+        let button = |direction: MoveDirection| {
+            let can = if let Some(current_exits) = &current_exits {
+                current_exits.contains(&direction)
+            } else {
+                false
             };
-            html! {
-                <div id="buttons">
-                    { for [W, N, S, E].iter().cloned().map(button) }
-                    // TODO: Restart feature
-                    //<button class="btn btn--primary" style="margin-left: 5px;"
-                    //    onclick=|_| Msg::Init>
-                    //    { "Restart" }
-                    //</button>
-                </div>
+            let can = can && !loading;
+            match can {
+                true => html! {
+                    <button class="btn btn--primary btn--large" style="margin-left: 5px;"
+                        onclick=|_| Msg::FetchNextRoom(direction)>
+                        { "Go " }{ direction.long_name() }
+                    </button>
+                },
+                false => html! {
+                    <button class="btn btn--inverted btn--large" style="margin-left: 5px;">
+                        { "Go " }{ direction.long_name() }
+                    </button>
+                },
             }
-        } else {
-            html! {
-                <p>{ "Please wait" }</p>
-            }
+        };
+        html! {
+            <div id="buttons">
+                { for [W, N, S, E].iter().cloned().map(button) }
+                // TODO: Restart feature
+                //<button class="btn btn--primary" style="margin-left: 5px;"
+                //    onclick=|_| Msg::Init>
+                //    { "Restart" }
+                //</button>
+            </div>
         }
     }
 
