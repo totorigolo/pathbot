@@ -174,26 +174,9 @@ impl Component for Model {
             Msg::ReceivedExit(exit, last_move) => {
                 self.fetching = false;
                 self.fetching_move = None;
-                self.state.status = Status::Finished(exit.clone());
 
-                // Fake a room (for the map)
-                // TODO: Shouldn't have to fake a room
-                let exit_room_id = "exit_room_yay".to_string();
-                let room = Room {
-                    status: RoomStatus::Finished,
-                    message: "Thank you for playing :)".to_string(),
-                    exits: vec![],
-                    description: exit.description,
-                    maze_exit_hint: MazeExitHint {
-                        // TODO: Should be None
-                        direction: CompassDirection::N,
-                        distance: 0,
-                    },
-                    // TODO: Should be None
-                    location_path: exit_room_id.clone(),
-                };
-                self.state.insert_room(room, last_move);
-                self.link.send_self(Msg::MoveToRoom(exit_room_id));
+                let room_id = self.state.reached_exit(exit, last_move);
+                self.link.send_self(Msg::MoveToRoom(room_id));
 
                 self.link.send_self(Msg::NewNotification(Notification {
                     message: "Congratulations! You exited the maze!".to_string(),
@@ -505,8 +488,7 @@ impl State {
 
     fn insert_room(&mut self, room: Room, last_move: Option<MoveDirection>) {
         // TODO: There are too many clone here
-
-        let cache_room_id = room.location_path.clone();
+        let location_path = room.location_path.clone();
 
         // Save the room, with its position
         let position = match last_move {
@@ -528,13 +510,43 @@ impl State {
             }
             None => Coordinate { x: 0, y: 0 },
         };
-        self.status = Status::InRoom(room.location_path.clone());
         self.rooms
             .insert(room.location_path.clone(), (room, position));
 
         // Add to the caches
-        self.room_coords.insert(cache_room_id.clone(), position);
-        self.coord_to_id.insert(position, cache_room_id);
+        self.room_coords.insert(location_path.clone(), position);
+        self.coord_to_id.insert(position, location_path);
+    }
+
+    fn reached_exit(&mut self, exit: Exit, last_move: Option<MoveDirection>) -> String {
+        let exit_move = match last_move.expect("Logic error: we must have moved here.") {
+            MoveDirection::N => MoveDirection::S,
+            MoveDirection::S => MoveDirection::N,
+            MoveDirection::E => MoveDirection::W,
+            MoveDirection::W => MoveDirection::E,
+        };
+
+        // Fake a room (for the map)
+        // TODO: Shouldn't have to fake a room
+        let exit_room_id = "exit_room_yay".to_string();
+        let room = Room {
+            status: RoomStatus::Finished,
+            message: "Thank you for playing :)".to_string(),
+            exits: vec![exit_move],
+            description: exit.description.clone(),
+            maze_exit_hint: MazeExitHint {
+                // TODO: Should be None
+                direction: CompassDirection::N,
+                distance: 0,
+            },
+            // TODO: Should be None
+            location_path: exit_room_id.clone(),
+        };
+        self.insert_room(room, last_move);
+
+        self.status = Status::Finished(exit);
+
+        exit_room_id
     }
 
     fn draw_map(&self) {
