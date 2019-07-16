@@ -1,5 +1,8 @@
 #![recursion_limit = "256"]
 
+#[macro_use]
+extern crate stdweb;
+
 use failure::Error;
 use linked_hash_map::LinkedHashMap;
 use log::*;
@@ -8,27 +11,42 @@ use std::{collections::HashMap, ops::Add};
 use stdweb::{
     traits::*,
     unstable::TryInto,
-    web::{document, html_element::CanvasElement, CanvasRenderingContext2d},
+    web::{
+        document,
+        html_element::CanvasElement,
+        CanvasRenderingContext2d,
+        event::KeyDownEvent,
+    },
+    traits::IKeyboardEvent,
 };
 use yew::{
     format::{Json, Text},
     html,
     prelude::*,
-    services::fetch::{FetchService, FetchTask, Request, Response},
+    services::{
+        fetch::{FetchService, FetchTask, Request, Response},
+    }
 };
 
 mod components;
 mod pathbot_api;
+mod services;
 
-pub use pathbot_api::*;
+use pathbot_api::*;
+use services::{KeydownService, KeydownTask};
 
 pub struct Model {
     state: State,
     link: ComponentLink<Model>,
+
     fetch_service: FetchService,
     fetching: bool,
     fetching_move: Option<MoveDirection>,
     fetch_task: Option<FetchTask>,
+
+    keydown_service: KeydownService,
+    keydown_task: Option<KeydownTask>,
+
     /// This is a LinkedHashMap to enable iteration in insertion order.
     notifications: LinkedHashMap<NotificationId, Notification>,
     next_notification_id: NotificationId,
@@ -98,6 +116,7 @@ pub enum NotificationLevel {
 
 pub enum Msg {
     Init,
+    HandleKeyDown(KeyDownEvent),
     FetchNextRoom(MoveDirection),
     /// Contains the last move.
     ReceivedRoom(Room, Option<MoveDirection>),
@@ -108,6 +127,7 @@ pub enum Msg {
     FetchRoomFailed(Error),
     NewNotification(Notification),
     NotificationClosed(NotificationId),
+    ClearNotifications,
     Noop,
 }
 
@@ -125,10 +145,15 @@ impl Component for Model {
         Model {
             state,
             link,
+
             fetch_service: FetchService::new(),
             fetching: false,
             fetching_move: None,
             fetch_task: None,
+
+            keydown_service: KeydownService::new(),
+            keydown_task: None,
+
             notifications: LinkedHashMap::default(),
             next_notification_id: 0,
         }
@@ -139,8 +164,25 @@ impl Component for Model {
             Msg::Init => {
                 self.state.restart();
                 self.fetch(FetchRoomRequest::StartRoom);
+
+                let cb = self.link.send_back(|e| Msg::HandleKeyDown(e));
+                self.keydown_task = Some(self.keydown_service.spawn(cb));
+            }
+            Msg::HandleKeyDown(key) => {
+                use MoveDirection::*;
+                match key.key().as_ref() {
+                    "N" | "n" => self.link.send_self(Msg::FetchNextRoom(N)),
+                    "E" | "e" => self.link.send_self(Msg::FetchNextRoom(E)),
+                    "W" | "w" => self.link.send_self(Msg::FetchNextRoom(W)),
+                    "S" | "s" => self.link.send_self(Msg::FetchNextRoom(S)),
+                    "Escape" => self.link.send_self(Msg::ClearNotifications),
+                    _ => {},
+                }
             }
             Msg::FetchNextRoom(direction) => {
+                if self.loading() || !self.state.can_move_direction(direction) {
+                    return false;
+                }
                 let status = self.state.status.clone();
                 match status {
                     Status::Loading => error!("Logic error: no current room."),
@@ -205,6 +247,9 @@ impl Component for Model {
             }
             Msg::NotificationClosed(notification_id) => {
                 self.notifications.remove(&notification_id);
+            }
+            Msg::ClearNotifications => {
+                self.notifications.clear();
             }
             Msg::Noop => {
                 return false;
@@ -314,14 +359,8 @@ impl Model {
         let loading = self.loading();
 
         use MoveDirection::*;
-        let current_exits = self.state.current_exits();
         let button = |direction: MoveDirection| {
-            let can = if let Some(current_exits) = &current_exits {
-                current_exits.contains(&direction)
-            } else {
-                false
-            };
-            let can = can && !loading;
+            let can = self.state.can_move_direction(direction) && !loading;
             match can {
                 true => html! {
                     <button class="btn btn--primary btn--large" style="margin-left: 5px;"
@@ -465,9 +504,9 @@ impl State {
         }
     }
 
-    fn current_exits(&self) -> Option<Vec<MoveDirection>> {
+    fn current_exits(&self) -> Option<&Vec<MoveDirection>> {
         match &self.status {
-            Status::InRoom(id) => self.rooms.get(id).map(|t| &t.0).map(|r| r.exits.clone()),
+            Status::InRoom(id) => self.rooms.get(id).map(|t| &t.0.exits),
             _ => None,
         }
     }
@@ -483,6 +522,14 @@ impl State {
         match &self.status {
             Status::InRoom(id) => Some(id),
             _ => None,
+        }
+    }
+
+    fn can_move_direction(&self, direction: MoveDirection) -> bool {
+        if let Some(current_exits) = self.current_exits() {
+            current_exits.contains(&direction)
+        } else {
+            false
         }
     }
 
